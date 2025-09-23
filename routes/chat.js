@@ -1,31 +1,72 @@
+// /routes/chat.js
+// --------------------------------------------------
+// Purpose: Handle incoming chat signals from the UI.
+// Captures user input, file attachments, mode, and
+// metadata into an array of "segments". These
+// segments will later be used to construct the final
+// payload that goes to OpenAI.
+// --------------------------------------------------
+
 const express = require('express');
+const { extract } = require('../services/extract'); // custom service for file text extraction
 const router = express.Router();
 
 router.post('/', async (req, res) => {
   try {
     const { text, mode, attachments } = req.body;
 
-    // Start with base text (user typed or STT voice result)
-    let prompt = text ? text.trim() : '';
+    // Array to hold every captured part of the incoming request.
+    // Nothing is merged yet — we store raw segments for full control later.
+    const segments = [];
 
-    // Merge extracted text from attachments (OCR/PDF/etc.)
+    // Capture user text (typed prompt or STT voice result).
+    if (text) {
+      segments.push({
+        type: 'user_text',
+        content: text.trim()
+      });
+    }
+
+    // Capture file attachments. Each file becomes its own segment.
+    // Extracted text is pulled in using the extract.js service.
     if (attachments && Array.isArray(attachments)) {
       for (const file of attachments) {
-        if (file.extracted_text) {
-          prompt += `\n[Attachment: ${file.filename || 'unnamed'}]\n${file.extracted_text}`;
-        }
+        const extracted = await extract(file.path, file.mimeType);
+        segments.push({
+          type: 'attachment',
+          filename: file.filename || 'unnamed',
+          mimeType: file.mimeType,
+          content: extracted
+        });
       }
     }
 
-    // For now, just return the collected prompt
+    // Capture the mode (e.g., "chat", "work", etc.).
+    // Stored as a segment so it can influence payload build later.
+    if (mode) {
+      segments.push({
+        type: 'mode',
+        content: mode
+      });
+    }
+
+    // Always capture a timestamp segment for ordering and traceability.
+    segments.push({
+      type: 'timestamp',
+      content: new Date().toISOString()
+    });
+
+    // For now: log the captured segments to console
+    // and return them to the UI for verification.
+    console.log('Captured segments:', JSON.stringify(segments, null, 2));
+
     return res.json({
       status: 'ok',
-      mode: mode || 'default',
-      prompt
+      segments
     });
 
   } catch (err) {
-    console.error('Chat input error:', err);
+    console.error('Chat error:', err);
     return res.status(500).json({ status: 'error', message: err.message });
   }
 });

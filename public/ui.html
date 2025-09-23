@@ -1,0 +1,183 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Seraphina v2 - Just a few prompts under 40 hours</title>
+
+<style>
+:root{--bg:#111827;--fg:#e5e7eb;--muted:#9ca3af;--accent:#6366f1}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{background:#1f2937;border:1px solid #374151;color:var(--fg);padding:14px 16px;border-radius:12px;cursor:pointer;font-size:18px;min-height:48px}
+.btn[disabled]{opacity:.6;cursor:not-allowed}
+.primary{background:var(--accent);border-color:var(--accent)}
+.chip{background:#0b1220;border:1px solid #334155;padding:10px 12px;border-radius:9999px;font-size:16px;color:var(--muted)}
+.prompt { color:#9ca3af; }  /* lighter gray, still readable */
+textarea{width:100%;height:22vh;max-height:60vh;resize:vertical;background:#0b1220;color:var(--fg);border:1px solid #334155;border-radius:12px;padding:14px;font-size:18px}
+/* Chat-style message blocks */
+.msg{padding:8px 0;border-bottom:1px solid #334155}
+.msg.user{color:#9ca3af}       /* dimmer for prompts */
+.msg.assistant{color:#e5e7eb}  /* default for replies */
+@media (max-width:640px){.btn{flex:1 1 100%}}
+.hidden{display:none}
+</style>
+
+<div class="wrap">
+  <!-- TOP ROW: Mode + Voice (two elements, 50% each) -->
+  <div class="row" style="margin-bottom:8px">
+    <select id="modeSel" class="btn" style="flex:1 1 calc(50% - 4px)"></select>
+    <select id="voiceSel" class="btn" style="flex:1 1 calc(50% - 4px)">
+      <option>alloy</option><option>verse</option><option>aria</option><option>sage</option>
+    </select>
+  </div>
+
+  <!-- TEXTBOX (unchanged) -->
+  <textarea id="t" placeholder="Type here..."></textarea>
+
+  <!-- ACTION ROW: Attach / Start / Send (33% each) -->
+  <div class="row" style="margin-top:8px">
+    <input id="fileIn" class="hidden" type="file" multiple accept="image/*,.txt,.md,.pdf,.csv,.log"/>
+    <button id="attachBtn" class="btn" style="flex:1 1 calc(33.333% - 6px)">📎 Attach</button>
+    <button id="recToggle" class="btn primary" style="flex:1 1 calc(33.333% - 6px)">🎤 Start</button>
+    <button id="sendBtn" class="btn primary" style="flex:1 1 calc(33.333% - 6px)">Send</button>
+  </div>
+
+  <!-- LABELS ROW under buttons -->
+  <div class="row" style="margin-top:4px">
+    <span id="fileNote" class="chip">no files</span>
+    <span id="recStatus" class="chip">ready</span>
+    <button id="histBtn" class="btn" style="margin-left:auto;flex:0 0 auto">History</button>
+  </div>
+
+  <!-- HISTORY/OUTPUT: Chat-style container (HTML) -->
+  <div id="o" style="max-height:50vh;overflow-y:auto;white-space:pre-wrap"></div>
+</div>
+
+<script>
+// ---------- mode ----------
+async function setMode(mode){
+  await fetch('set_mode.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'mode='+mode});
+  // reflect current in dropdown (and anywhere else if needed)
+  if (modeSel) modeSel.value = mode;
+}
+async function getMode(){
+  const r=await (await fetch('get_mode.php')).json();
+  if (modeSel) modeSel.value = r.mode;
+}
+
+// Build mode dropdown from available modes
+const modeSel = document.getElementById('modeSel');
+const AVAILABLE_MODES = ['chat','drive','work','hot']; // auto-populated list
+for (const m of AVAILABLE_MODES){
+  const opt=document.createElement('option'); opt.value=m; opt.textContent=m;
+  modeSel.appendChild(opt);
+}
+modeSel.onchange=()=> setMode(modeSel.value);
+
+// ---------- voice / TTS ----------
+const voiceSel=document.getElementById('voiceSel');
+voiceSel.value=localStorage.voice||'alloy';
+voiceSel.onchange=()=>localStorage.voice=voiceSel.value;
+
+async function speak(text){
+  const res=await fetch('tts.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({text,voice:voiceSel.value})});
+  const b=await res.blob();
+  const audio=new Audio(URL.createObjectURL(b));
+  audio.play();
+}
+
+// ---------- file buffer ----------
+const fileIn=document.getElementById('fileIn');
+const attachBtn=document.getElementById('attachBtn');
+const fileNote=document.getElementById('fileNote');
+let selectedFiles=[];
+
+function refreshNote(){
+  fileNote.textContent = selectedFiles.length ? `${selectedFiles.length} file(s) ready` : 'no files';
+}
+attachBtn.onclick=()=> fileIn.click();
+fileIn.onchange=(e)=>{
+  for(const f of e.target.files) selectedFiles.push(f);
+  fileIn.value='';
+  refreshNote();
+};
+
+// ---------- send ----------
+const sendBtn=document.getElementById('sendBtn');
+async function send(){
+  const ta=document.getElementById('t');
+  const text=(ta.value||'').trim();
+  if(!text && selectedFiles.length===0) return;
+
+  sendBtn.disabled=true;
+  try{
+    const fd=new FormData();
+    fd.append('text',text);
+    for(const f of selectedFiles){ fd.append('files[]', f, f.name); }
+
+    const r=await (await fetch('chat.php',{method:'POST',body:fd})).json();
+    const reply=(r.reply||'').trim();
+    const attached=(r.attached||[]).map(a=>a.name).join(', ');
+
+    const oEl=document.getElementById('o');
+
+    // Append like ChatGPT: user then assistant, newest at bottom
+    const userLine = (text||'(files only)') + (attached?`  [files: ${attached}]`:'');
+    oEl.innerHTML += `
+      <div class="msg user">→ ${userLine}</div>
+      <div class="msg assistant">← ${reply}</div>
+    `;
+    oEl.scrollTop = oEl.scrollHeight;
+
+    ta.value='';
+    selectedFiles=[]; refreshNote();
+    await speak(reply);
+  } finally { sendBtn.disabled=false; }
+}
+sendBtn.onclick=send;
+
+// ---------- history ----------
+const histBtn=document.getElementById('histBtn');
+if (histBtn){
+  histBtn.onclick=async()=>{
+    const r = await (await fetch('history.php?limit=40')).json();
+    const items = Array.isArray(r.items) ? r.items.slice() : [];
+    // Oldest -> newest so newest ends up at the bottom (ChatGPT feel)
+    items.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+
+    const html = items.map(i=>{
+      const roleClass = (i.role === 'user') ? 'user' : 'assistant';
+      const body = (i.text ?? i.compressed ?? '').trim();
+      return `<div class="msg ${roleClass}">#${i.id} [${i.role}/${i.mode}] ${i.created_at}\n${body}</div>`;
+    }).join('');
+
+    const oEl = document.getElementById('o');
+    oEl.innerHTML = html || '(no history)';
+    oEl.scrollTop = oEl.scrollHeight; // show latest at bottom
+  };
+}
+
+// ---------- mic (toggle) ----------
+let rec,chunks=[],stream;
+const btn=document.getElementById('recToggle'), statusEl=document.getElementById('recStatus');
+async function startRec(){try{
+  chunks=[]; stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  const mt=MediaRecorder.isTypeSupported("audio/webm;codecs=opus")?"audio/webm;codecs=opus":(MediaRecorder.isTypeSupported("audio/mp4")?"audio/mp4":"");
+  rec=new MediaRecorder(stream,mt?{mimeType:mt}:{ });
+  rec.ondataavailable=e=>chunks.push(e.data);
+  rec.onstop=async()=>{
+    const blob=new Blob(chunks,{type:mt||'audio/webm'});
+    const fd=new FormData(); fd.append('audio',blob,'audio.webm');
+    const tr=await (await fetch('stt.php',{method:'POST',body:fd})).json();
+    const text=(tr.text||'').trim(); if(text){ document.getElementById('t').value=text; }
+    statusEl.textContent='ready'; if(stream) stream.getTracks().forEach(t=>t.stop());
+  };
+  rec.start(); btn.textContent='■ Stop'; statusEl.textContent='recording…';
+}catch(e){ statusEl.textContent='mic blocked'; }}
+function stopRec(){ if(rec && rec.state!=='inactive') rec.stop(); btn.textContent='🎤 Start'; }
+btn.onclick=()=> (btn.textContent.includes('Start')?startRec():stopRec());
+
+// boot
+getMode(); refreshNote();
+</script>
