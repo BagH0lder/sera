@@ -13,6 +13,9 @@ const router = express.Router();
 
 router.post('/', async (req, res) => {
   try {
+    console.log("DEBUG incoming body:", req.body);
+    return res.status(200).json({ debug: req.body }); // exit early for now
+    
     const { text, mode, attachments } = req.body;
 
     // Array to hold every captured part of the incoming request.

@@ -1,0 +1,32 @@
+
+The UI is not functioning. Some issues are listed below.
+
+Voice Readback Selector:
+The selector is not functioning and should default to user preference (is a var in config)
+Some voices did not work previousely and need to be fixed. Only Alloy and Sage worked.
+
+Voice Recording (start button):
+The voice recorder does not function.
+
+Mode Selector:
+The mode selector should be populated by the db
+The current mode selected is sent in with the prompt 
+If no mode detected/selected and on loading defaults to the last used mode
+
+Send Button:
+Send button does not work. 
+Attach files seems to work (but not sure if it would send if it could.) 
+
+Not Optional but Later/Next:
+Persona section in the admin so the user can add personality to the session.
+ - personas are multi-faceted such as a description and a name. Where the description may contain the gender of the assistant or maybe even virtual hair color or what ever the user desires.
+Mode editor in admin.js. Siple add and edit/delete for each mode listed.
+ - modes are multi faceted, like response tweaking and output format.
+Section in admin for adding global rules (these will be injected into the payload)
+
+
+Wish list:
+Would like read outloud button under each response.
+Need a mute button on the voice readback. 
+
+ 

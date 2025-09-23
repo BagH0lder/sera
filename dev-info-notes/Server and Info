@@ -1,0 +1,11 @@
+
+
+//IDE Info
+
+
+
+//NODE SERVER (uses PM2)
+//It starts on reboot and runs always.
+pm2 restart server → restart anytime
+pm2 logs server → view console output
+pm2 stop server → stop it

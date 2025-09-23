@@ -116,7 +116,7 @@ async function send(){
     fd.append('text',text);
     for(const f of selectedFiles){ fd.append('files[]', f, f.name); }
 
-    const r=await (await fetch('chat.php',{method:'POST',body:fd})).json();
+    const r=await (await fetch('chat',{method:'POST',body:fd})).json();
     const reply=(r.reply||'').trim();
     const attached=(r.attached||[]).map(a=>a.name).join(', ');
 
