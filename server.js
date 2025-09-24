@@ -2,6 +2,10 @@ const express = require('express');
 const app = express();
 const PORT = 3000;
 
+// Let text fields in a multipart/form-data upload come 
+// through alongside the files
+app.use(express.urlencoded({ extended: true }));
+
 // Enable JSON request parsing
 app.use(express.json());
 

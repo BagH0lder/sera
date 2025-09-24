@@ -1,76 +1,79 @@
-// /routes/chat.js
-// --------------------------------------------------
-// Purpose: Handle incoming chat signals from the UI.
-// Captures user input, file attachments, mode, and
-// metadata into an array of "segments". These
-// segments will later be used to construct the final
-// payload that goes to OpenAI.
-// --------------------------------------------------
-
+// routes/chat.js
 const express = require('express');
-const { extract } = require('../services/extract'); // custom service for file text extraction
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const extract = require('../services/extract'); // your file extraction helper
 const router = express.Router();
 
-router.post('/', async (req, res) => {
-  try {
-    console.log("DEBUG incoming body:", req.body);
-    return res.status(200).json({ debug: req.body }); // exit early for now
-    
-    const { text, mode, attachments } = req.body;
+// Configure Multer for file uploads (tmp storage).
+const upload = multer({ dest: 'uploads/' });
 
-    // Array to hold every captured part of the incoming request.
-    // Nothing is merged yet — we store raw segments for full control later.
+// POST /chat
+router.post('/', upload.array('files[]'), async (req, res) => {
+  try {
+    // UI sends text and mode as fields, files[] as files
+    const { text, mode } = req.body;
+
+    // Collect all incoming segments for later payload assembly
     const segments = [];
 
-    // Capture user text (typed prompt or STT voice result).
-    if (text) {
+    // If plain text is present, add it
+    if (text && text.trim()) {
       segments.push({
         type: 'user_text',
         content: text.trim()
       });
     }
 
-    // Capture file attachments. Each file becomes its own segment.
-    // Extracted text is pulled in using the extract.js service.
-    if (attachments && Array.isArray(attachments)) {
-      for (const file of attachments) {
-        const extracted = await extract(file.path, file.mimeType);
-        segments.push({
-          type: 'attachment',
-          filename: file.filename || 'unnamed',
-          mimeType: file.mimeType,
-          content: extracted
-        });
+    // If files were uploaded, loop through them and extract contents
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const extracted = await extract(file.path, file.mimetype);
+          segments.push({
+            type: 'attachment',
+            filename: file.originalname,
+            mimeType: file.mimetype,
+            content: extracted
+          });
+        } catch (err) {
+          console.error(`Extraction failed for ${file.originalname}:`, err);
+          segments.push({
+            type: 'attachment',
+            filename: file.originalname,
+            mimeType: file.mimetype,
+            content: '[Error extracting file contents]'
+          });
+        } finally {
+          // Always clean up temp file after processing
+          fs.unlink(file.path, () => {});
+        }
       }
     }
 
-    // Capture the mode (e.g., "chat", "work", etc.).
-    // Stored as a segment so it can influence payload build later.
-    if (mode) {
-      segments.push({
-        type: 'mode',
-        content: mode
-      });
-    }
+    // Debug log: shows exactly what was captured
+    //console.log('DEBUG captured segments:', JSON.stringify(segments, null, 2));
 
-    // Always capture a timestamp segment for ordering and traceability.
-    segments.push({
-      type: 'timestamp',
-      content: new Date().toISOString()
-    });
+    // Debug log
+    console.log('DEBUG captured segments:', JSON.stringify(segments, null, 2));
 
-    // For now: log the captured segments to console
-    // and return them to the UI for verification.
-    console.log('Captured segments:', JSON.stringify(segments, null, 2));
+    // Temporary: echo back user text as `reply`
+    const replyText = segments.find(s => s.type === 'user_text')?.content || '(no text)';
 
+    // Respond in the format the UI expects
     return res.json({
-      status: 'ok',
+      reply: replyText,
+      attached: [],
       segments
     });
 
+    // Exit early — no call to OpenAI yet
+    return res.json({ ok: true, segments });
+
   } catch (err) {
     console.error('Chat error:', err);
-    return res.status(500).json({ status: 'error', message: err.message });
+    return res.status(500).json({ error: 'Server error in chat route.' });
   }
 });
 
